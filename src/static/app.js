@@ -3,6 +3,147 @@ document.addEventListener("DOMContentLoaded", () => {
   const activitySelect = document.getElementById("activity");
   const signupForm = document.getElementById("signup-form");
   const messageDiv = document.getElementById("message");
+  const loginBtn = document.getElementById("login-btn");
+  const loginModal = document.getElementById("login-modal");
+  const loginForm = document.getElementById("login-form");
+  const logoutBtn = document.getElementById("logout-btn");
+  const userInfo = document.getElementById("user-info");
+  const usernameDisplay = document.getElementById("username-display");
+  const loginError = document.getElementById("login-error");
+  const closeModal = document.querySelector(".close");
+  const teacherNotice = document.getElementById("teacher-only-notice");
+
+  let authToken = localStorage.getItem("authToken");
+  let username = localStorage.getItem("username");
+
+  // Check authentication status on load
+  if (authToken) {
+    verifySession();
+  } else {
+    showTeacherNotice();
+  }
+
+  // Function to verify session
+  async function verifySession() {
+    try {
+      const response = await fetch("/auth/verify", {
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setAuthenticatedState(data.username);
+      } else {
+        clearAuthState();
+        showTeacherNotice();
+      }
+    } catch (error) {
+      console.error("Error verifying session:", error);
+      clearAuthState();
+      showTeacherNotice();
+    }
+  }
+
+  // Function to set authenticated state
+  function setAuthenticatedState(user) {
+    username = user;
+    document.body.classList.add("authenticated");
+    loginBtn.classList.add("hidden");
+    userInfo.classList.remove("hidden");
+    usernameDisplay.textContent = `Teacher: ${username}`;
+    teacherNotice.classList.add("hidden");
+  }
+
+  // Function to clear auth state
+  function clearAuthState() {
+    authToken = null;
+    username = null;
+    localStorage.removeItem("authToken");
+    localStorage.removeItem("username");
+    document.body.classList.remove("authenticated");
+    loginBtn.classList.remove("hidden");
+    userInfo.classList.add("hidden");
+  }
+
+  // Function to show teacher notice
+  function showTeacherNotice() {
+    teacherNotice.classList.remove("hidden");
+  }
+
+  // Open login modal
+  loginBtn.addEventListener("click", () => {
+    loginModal.classList.remove("hidden");
+    loginError.classList.add("hidden");
+  });
+
+  // Close login modal
+  closeModal.addEventListener("click", () => {
+    loginModal.classList.add("hidden");
+  });
+
+  // Close modal on outside click
+  window.addEventListener("click", (event) => {
+    if (event.target === loginModal) {
+      loginModal.classList.add("hidden");
+    }
+  });
+
+  // Handle login form submission
+  loginForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const username = document.getElementById("username").value;
+    const password = document.getElementById("password").value;
+
+    try {
+      const response = await fetch(
+        `/auth/login?username=${encodeURIComponent(
+          username
+        )}&password=${encodeURIComponent(password)}`,
+        {
+          method: "POST",
+        }
+      );
+
+      const result = await response.json();
+
+      if (response.ok) {
+        authToken = result.token;
+        localStorage.setItem("authToken", authToken);
+        localStorage.setItem("username", result.username);
+        setAuthenticatedState(result.username);
+        loginModal.classList.add("hidden");
+        loginForm.reset();
+        fetchActivities(); // Refresh to show delete buttons
+      } else {
+        loginError.textContent = result.detail || "Login failed";
+        loginError.classList.remove("hidden");
+      }
+    } catch (error) {
+      loginError.textContent = "Login failed. Please try again.";
+      loginError.classList.remove("hidden");
+      console.error("Error logging in:", error);
+    }
+  });
+
+  // Handle logout
+  logoutBtn.addEventListener("click", async () => {
+    try {
+      await fetch("/auth/logout", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+        },
+      });
+    } catch (error) {
+      console.error("Error logging out:", error);
+    }
+
+    clearAuthState();
+    showTeacherNotice();
+    fetchActivities(); // Refresh to hide delete buttons
+  });
 
   // Function to fetch activities from API
   async function fetchActivities() {
@@ -56,7 +197,7 @@ document.addEventListener("DOMContentLoaded", () => {
         activitySelect.appendChild(option);
       });
 
-      // Add event listeners to delete buttons
+      // Add event listeners to delete buttons (only visible when authenticated)
       document.querySelectorAll(".delete-btn").forEach((button) => {
         button.addEventListener("click", handleUnregister);
       });
@@ -73,6 +214,13 @@ document.addEventListener("DOMContentLoaded", () => {
     const activity = button.getAttribute("data-activity");
     const email = button.getAttribute("data-email");
 
+    if (!authToken) {
+      messageDiv.textContent = "Please login to unregister students";
+      messageDiv.className = "error";
+      messageDiv.classList.remove("hidden");
+      return;
+    }
+
     try {
       const response = await fetch(
         `/activities/${encodeURIComponent(
@@ -80,6 +228,9 @@ document.addEventListener("DOMContentLoaded", () => {
         )}/unregister?email=${encodeURIComponent(email)}`,
         {
           method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${authToken}`,
+          },
         }
       );
 
@@ -114,6 +265,13 @@ document.addEventListener("DOMContentLoaded", () => {
   signupForm.addEventListener("submit", async (event) => {
     event.preventDefault();
 
+    if (!authToken) {
+      messageDiv.textContent = "Please login to register students";
+      messageDiv.className = "error";
+      messageDiv.classList.remove("hidden");
+      return;
+    }
+
     const email = document.getElementById("email").value;
     const activity = document.getElementById("activity").value;
 
@@ -124,6 +282,9 @@ document.addEventListener("DOMContentLoaded", () => {
         )}/signup?email=${encodeURIComponent(email)}`,
         {
           method: "POST",
+          headers: {
+            Authorization: `Bearer ${authToken}`,
+          },
         }
       );
 
